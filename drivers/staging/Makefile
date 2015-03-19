@@ -58,6 +58,7 @@ obj-$(CONFIG_ANDROID)		+= android/
 obj-$(CONFIG_PHONE)		+= telephony/
 obj-$(CONFIG_RAMSTER)		+= ramster/
 obj-$(CONFIG_USB_WPAN_HCD)	+= ozwpan/
+obj-$(CONFIG_PRIMA_WLAN)	+= prima/
 
 #
 # Merged from msm8960 jb v17321J by ZTE_BOOT_JIA_20121009 jia.jia

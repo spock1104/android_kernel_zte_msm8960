@@ -134,6 +134,8 @@ source "drivers/staging/ramster/Kconfig"
 
 source "drivers/staging/ozwpan/Kconfig"
 
+source "drivers/staging/prima/Kconfig"
+
 #
 # Merged from msm8960 jb v17321J by ZTE_BOOT_JIA_20121009 jia.jia
 #

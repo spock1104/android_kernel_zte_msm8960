@@ -161,7 +161,7 @@ proc_read_val(char *page, char **start, off_t off, int count, int *eof,
 {
 	int len = 0;
 	char chiptype[16], sensor[16];
-	int fw_ver;
+	int fw_ver = 0;
 	
 	if ( syn_ts == NULL)
 		return -1;

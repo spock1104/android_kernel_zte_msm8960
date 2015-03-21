@@ -45,9 +45,9 @@
 
 #define SECCLKAGD		BIT(4)
 
-#ifndef CONFIG_ZTE_PLATFORM
-#define CONFIG_ZTE_PLATFORM
-#endif
+//#ifndef CONFIG_ZTE_PLATFORM
+//#define CONFIG_ZTE_PLATFORM
+//#endif
 
 #ifdef CONFIG_ZTE_PLATFORM
 #define CONFIG_MSM_CPU_FREQ_MAX   1512000
@@ -439,23 +439,25 @@ static int calculate_vdd_dig(const struct acpu_level *tgt)
 static bool enable_boost = true;
 module_param_named(boost, enable_boost, bool, S_IRUGO | S_IWUSR);
 
-#ifndef CONFIG_ZTE_PLATFORM
-#define CONFIG_ZTE_PLATFORM
-#endif
-#ifdef CONFIG_ZTE_PLATFORM
-bool enable_zte_log;
-module_param_named(enable_zte_log, enable_zte_log, bool, S_IRUGO | S_IWUSR);
 static int zte_acpu_pvs = 0;	//ZTE_LKJ_20121220 add to identify cpu
 module_param_named(pvs_1Nor_3Fa_OtherS, zte_acpu_pvs, uint, S_IRUGO | S_IWUSR);
 bool zte_acpu_pcn = false;
 module_param_named(pcn_Ypcn, zte_acpu_pcn, bool, S_IRUGO | S_IWUSR);
 
+//#ifndef CONFIG_ZTE_PLATFORM
+//#define CONFIG_ZTE_PLATFORM
+//#endif
+#ifdef CONFIG_ZTE_PLATFORM
+bool enable_zte_log;
+module_param_named(enable_zte_log, enable_zte_log, bool, S_IRUGO | S_IWUSR);
 
-#define BOOST_UV 25000
+
+
+//#define BOOST_UV 25000
 //#define BOOST_UV 50000
-#define HFPLL_NOMINAL_VDD	1050000
-#define HFPLL_LOW_VDD		 850000
-#define HFPLL_LOW_VDD_PLL_L_MAX	0x28
+//#define HFPLL_NOMINAL_VDD	1050000
+//#define HFPLL_LOW_VDD		 850000
+//#define HFPLL_LOW_VDD_PLL_L_MAX	0x28
 #endif
 
 static int calculate_vdd_core(const struct acpu_level *tgt)
@@ -533,9 +535,9 @@ static int acpuclk_krait_set_rate(int cpu, unsigned long rate,
 	dev_dbg(drv.dev, "Switching from ACPU%d rate %lu KHz -> %lu KHz\n",
 		cpu, strt_acpu_s->khz, tgt_acpu_s->khz);
 	
-      if(enable_zte_log)
-	  printk("%s,switching from ACPU%d rate %lu KHz -> %lu KHz,vdd_mem=%d,vdd_dig=%d,vdd_core=%d,enable_boost=%d\n",
-	  	__func__,cpu, strt_acpu_s->khz, tgt_acpu_s->khz,vdd_data.vdd_mem,vdd_data.vdd_dig,vdd_data.vdd_core,enable_boost);
+//      if(enable_zte_log)
+//	  printk("%s,switching from ACPU%d rate %lu KHz -> %lu KHz,vdd_mem=%d,vdd_dig=%d,vdd_core=%d,enable_boost=%d\n",
+//	  	__func__,cpu, strt_acpu_s->khz, tgt_acpu_s->khz,vdd_data.vdd_mem,vdd_data.vdd_dig,vdd_data.vdd_core,enable_boost);
 
 	/* Set the new CPU speed. */
 	set_speed(&drv.scalable[cpu], tgt_acpu_s);
@@ -1105,7 +1107,7 @@ static void __init drv_data_init(struct device *dev,
 	BUG_ON(!max_acpu_level);
 
 	zte_cpu_id=read_cpuid_id();
-	pr_info("slf2012:CPU_ID=0x%X, Max ACPU freq= %lu KHz, boost_uv=%d\n", zte_cpu_id,max_acpu_level->speed.khz,BOOST_UV);
+	pr_info("slf2012:CPU_ID=0x%X, Max ACPU freq= %lu KHz, boost_uv=%d\n", zte_cpu_id,max_acpu_level->speed.khz,pvs->boost_uv);
 
 	acpuclk_krait_data.power_collapse_khz = params->stby_khz;
 	acpuclk_krait_data.wait_for_irq_khz = params->stby_khz;

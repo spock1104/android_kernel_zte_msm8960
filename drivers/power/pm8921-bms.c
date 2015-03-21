@@ -957,7 +957,7 @@ static void calculate_cc_uah(struct pm8921_bms_chip *chip, int cc, int *val)
 
 int pm8921_bms_cc_uah(int *cc_uah)
 {
-	int cc;
+	int cc = 0;
 
 	*cc_uah = 0;
 
@@ -2173,7 +2173,7 @@ EXPORT_SYMBOL(pm8921_bms_get_vsense_avg);
 
 int pm8921_bms_get_battery_current(int *result_ua)
 {
-	int vsense_uv;
+	int vsense_uv = 0;
 
 	if (!the_chip) {
 		pr_err("called before initialization\n");

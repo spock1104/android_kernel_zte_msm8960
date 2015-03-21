@@ -607,7 +607,8 @@ int rtnetlink_put_metrics(struct sk_buff *skb, u32 *metrics)
 	for (i = 0; i < RTAX_MAX; i++) {
 		if (metrics[i]) {
 			valid++;
-			nla_put_u32(skb, i+1, metrics[i]);
+			if (nla_put_u32(skb, i+1, metrics[i]))
+				goto nla_put_failure;
 		}
 	}
 
@@ -942,8 +943,9 @@ static int rtnl_fill_ifinfo(struct sk_buff *skb, struct net_device *dev,
 		goto nla_put_failure;
 	copy_rtnl_link_stats64(nla_data(attr), stats);
 
-	if (dev->dev.parent && (ext_filter_mask & RTEXT_FILTER_VF))
-		nla_put_u32(skb, IFLA_NUM_VF, dev_num_vf(dev->dev.parent));
+	if (dev->dev.parent && (ext_filter_mask & RTEXT_FILTER_VF) &&
+	    nla_put_u32(skb, IFLA_NUM_VF, dev_num_vf(dev->dev.parent)))
+		goto nla_put_failure;
 
 	if (dev->netdev_ops->ndo_get_vf_config && dev->dev.parent
 	    && (ext_filter_mask & RTEXT_FILTER_VF)) {
@@ -986,12 +988,13 @@ static int rtnl_fill_ifinfo(struct sk_buff *skb, struct net_device *dev,
 				nla_nest_cancel(skb, vfinfo);
 				goto nla_put_failure;
 			}
-			nla_put(skb, IFLA_VF_MAC, sizeof(vf_mac), &vf_mac);
-			nla_put(skb, IFLA_VF_VLAN, sizeof(vf_vlan), &vf_vlan);
+			if (nla_put(skb, IFLA_VF_MAC, sizeof(vf_mac), &vf_mac) ||
+			nla_put(skb, IFLA_VF_VLAN, sizeof(vf_vlan), &vf_vlan) ||
 			nla_put(skb, IFLA_VF_TX_RATE, sizeof(vf_tx_rate),
-				&vf_tx_rate);
+				&vf_tx_rate) ||
 			nla_put(skb, IFLA_VF_SPOOFCHK, sizeof(vf_spoofchk),
-				&vf_spoofchk);
+				&vf_spoofchk))
+				goto nla_put_failure;
 			nla_nest_end(skb, vf);
 		}
 		nla_nest_end(skb, vfinfo);

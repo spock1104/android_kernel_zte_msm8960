@@ -3997,13 +3997,15 @@ static int inet6_fill_ifla6_attrs(struct sk_buff *skb, struct inet6_dev *idev)
 	struct nlattr *nla;
 	struct ifla_cacheinfo ci;
 
-	nla_put_u32(skb, IFLA_INET6_FLAGS, idev->if_flags);
+	if (nla_put_u32(skb, IFLA_INET6_FLAGS, idev->if_flags))
+		goto nla_put_failure;
 
 	ci.max_reasm_len = IPV6_MAXPLEN;
 	ci.tstamp = cstamp_delta(idev->tstamp);
 	ci.reachable_time = jiffies_to_msecs(idev->nd_parms->reachable_time);
 	ci.retrans_time = jiffies_to_msecs(idev->nd_parms->retrans_time);
-	nla_put(skb, IFLA_INET6_CACHEINFO, sizeof(ci), &ci);
+	if (nla_put(skb, IFLA_INET6_CACHEINFO, sizeof(ci), &ci))
+		goto nla_put_failure;
 
 	nla = nla_reserve(skb, IFLA_INET6_CONF, DEVCONF_MAX * sizeof(s32));
 	if (nla == NULL)
@@ -4069,14 +4071,15 @@ static int inet6_fill_ifinfo(struct sk_buff *skb, struct inet6_dev *idev,
 	hdr->ifi_flags = dev_get_flags(dev);
 	hdr->ifi_change = 0;
 
-	nla_put_string(skb, IFLA_IFNAME, dev->name);
+	if (nla_put_string(skb, IFLA_IFNAME, dev->name) ||
 
-	if (dev->addr_len)
-		nla_put(skb, IFLA_ADDRESS, dev->addr_len, dev->dev_addr);
+	(dev->addr_len &&
+		nla_put(skb, IFLA_ADDRESS, dev->addr_len, dev->dev_addr)) ||
 
-	nla_put_u32(skb, IFLA_MTU, dev->mtu);
-	if (dev->ifindex != dev->iflink)
-		nla_put_u32(skb, IFLA_LINK, dev->iflink);
+	nla_put_u32(skb, IFLA_MTU, dev->mtu) ||
+	(dev->ifindex != dev->iflink &&
+		nla_put_u32(skb, IFLA_LINK, dev->iflink)))
+		goto nla_put_failure;
 
 	protoinfo = nla_nest_start(skb, IFLA_PROTINFO);
 	if (protoinfo == NULL)
@@ -4190,11 +4193,13 @@ static int inet6_fill_prefix(struct sk_buff *skb, struct inet6_dev *idev,
 	if (pinfo->autoconf)
 		pmsg->prefix_flags |= IF_PREFIX_AUTOCONF;
 
-	nla_put(skb, PREFIX_ADDRESS, sizeof(pinfo->prefix), &pinfo->prefix);
+	if (nla_put(skb, PREFIX_ADDRESS, sizeof(pinfo->prefix), &pinfo->prefix))
+		goto nla_put_failure;
 
 	ci.preferred_time = ntohl(pinfo->prefered);
 	ci.valid_time = ntohl(pinfo->valid);
-	nla_put(skb, PREFIX_CACHEINFO, sizeof(ci), &ci);
+	if (nla_put(skb, PREFIX_CACHEINFO, sizeof(ci), &ci))
+		goto nla_put_failure;
 
 	return nlmsg_end(skb, nlh);
 

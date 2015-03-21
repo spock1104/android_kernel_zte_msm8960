@@ -314,40 +314,45 @@ nfqnl_build_packet_message(struct nfqnl_instance *queue,
 
 	if (outdev) {
 #ifndef CONFIG_BRIDGE_NETFILTER
-		nla_put_be32(skb, NFQA_IFINDEX_OUTDEV, htonl(outdev->ifindex));
+		if (nla_put_be32(skb, NFQA_IFINDEX_OUTDEV, htonl(outdev->ifindex)))
+			goto nla_put_failure;
 #else
 		if (entry->pf == PF_BRIDGE) {
 			/* Case 1: outdev is physical output device, we need to
 			 * look for bridge group (when called from
 			 * netfilter_bridge) */
-			nla_put_be32(skb, NFQA_IFINDEX_PHYSOUTDEV,
-				     htonl(outdev->ifindex));
+			if (nla_put_be32(skb, NFQA_IFINDEX_PHYSOUTDEV,
+				     htonl(outdev->ifindex)) ||
 			/* this is the bridge group "brX" */
 			/* rcu_read_lock()ed by __nf_queue */
 			nla_put_be32(skb, NFQA_IFINDEX_OUTDEV,
-				     htonl(br_port_get_rcu(outdev)->br->dev->ifindex));
+				     htonl(br_port_get_rcu(outdev)->br->dev->ifindex)))
+				goto nla_put_failure
 		} else {
 			/* Case 2: outdev is bridge group, we need to look for
 			 * physical output device (when called from ipv4) */
-			nla_put_be32(skb, NFQA_IFINDEX_OUTDEV,
-				     htonl(outdev->ifindex));
-			if (entskb->nf_bridge && entskb->nf_bridge->physoutdev)
+			if (nla_put_be32(skb, NFQA_IFINDEX_OUTDEV,
+				     htonl(outdev->ifindex)))
+				goto nla_put_failure
+			if (entskb->nf_bridge && entskb->nf_bridge->physoutdev &&
 				nla_put_be32(skb, NFQA_IFINDEX_PHYSOUTDEV,
-					     htonl(entskb->nf_bridge->physoutdev->ifindex));
+					     htonl(entskb->nf_bridge->physoutdev->ifindex)))
+				goto nla_put_failure;
 		}
 #endif
 	}
 
-	if (entskb->mark)
-		nla_put_be32(skb, NFQA_MARK, htonl(entskb->mark));
-
+	if (entskb->mark &&
+		nla_put_be32(skb, NFQA_MARK, htonl(entskb->mark)))
+		goto nla_put_failure;
 	if (indev && entskb->dev &&
 	    entskb->mac_header != entskb->network_header) {
 		struct nfqnl_msg_packet_hw phw;
 		int len = dev_parse_header(entskb, phw.hw_addr);
 		if (len) {
 			phw.hw_addrlen = htons(len);
-			nla_put(skb, NFQA_HWADDR, sizeof(phw), &phw);
+			if (nla_put(skb, NFQA_HWADDR, sizeof(phw), &phw))
+				goto nla_put_failure;
 		}
 	}
 
@@ -357,7 +362,8 @@ nfqnl_build_packet_message(struct nfqnl_instance *queue,
 		ts.sec = cpu_to_be64(tv.tv_sec);
 		ts.usec = cpu_to_be64(tv.tv_usec);
 
-		nla_put(skb, NFQA_TIMESTAMP, sizeof(ts), &ts);
+		if (nla_put(skb, NFQA_TIMESTAMP, sizeof(ts), &ts))
+			goto nla_put_failure;
 	}
 
 	if (data_len) {

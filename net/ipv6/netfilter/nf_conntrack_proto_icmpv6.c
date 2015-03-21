@@ -234,9 +234,10 @@ icmpv6_error(struct net *net, struct nf_conn *tmpl,
 static int icmpv6_tuple_to_nlattr(struct sk_buff *skb,
 				  const struct nf_conntrack_tuple *t)
 {
-	nla_put_be16(skb, CTA_PROTO_ICMPV6_ID, t->src.u.icmp.id);
-	nla_put_u8(skb, CTA_PROTO_ICMPV6_TYPE, t->dst.u.icmp.type);
-	nla_put_u8(skb, CTA_PROTO_ICMPV6_CODE, t->dst.u.icmp.code);
+	if (nla_put_be16(skb, CTA_PROTO_ICMPV6_ID, t->src.u.icmp.id) ||
+	nla_put_u8(skb, CTA_PROTO_ICMPV6_TYPE, t->dst.u.icmp.type) ||
+	nla_put_u8(skb, CTA_PROTO_ICMPV6_CODE, t->dst.u.icmp.code))
+		goto nla_put_failure;
 
 	return 0;
 

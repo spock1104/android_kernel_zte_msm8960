@@ -1768,28 +1768,28 @@ static int neightbl_fill_parms(struct sk_buff *skb, struct neigh_parms *parms)
 	if (nest == NULL)
 		return -ENOBUFS;
 
-	if (parms->dev)
-		nla_put_u32(skb, NDTPA_IFINDEX, parms->dev->ifindex);
-
-	nla_put_u32(skb, NDTPA_REFCNT, atomic_read(&parms->refcnt));
-	nla_put_u32(skb, NDTPA_QUEUE_LENBYTES, parms->queue_len_bytes);
-	/* approximative value for deprecated QUEUE_LEN (in packets) */
-	nla_put_u32(skb, NDTPA_QUEUE_LEN,
-		    DIV_ROUND_UP(parms->queue_len_bytes,
-				 SKB_TRUESIZE(ETH_FRAME_LEN)));
-	nla_put_u32(skb, NDTPA_PROXY_QLEN, parms->proxy_qlen);
-	nla_put_u32(skb, NDTPA_APP_PROBES, parms->app_probes);
-	nla_put_u32(skb, NDTPA_UCAST_PROBES, parms->ucast_probes);
-	nla_put_u32(skb, NDTPA_MCAST_PROBES, parms->mcast_probes);
-	nla_put_msecs(skb, NDTPA_REACHABLE_TIME, parms->reachable_time);
-	nla_put_msecs(skb, NDTPA_BASE_REACHABLE_TIME,
-		      parms->base_reachable_time);
-	nla_put_msecs(skb, NDTPA_GC_STALETIME, parms->gc_staletime);
-	nla_put_msecs(skb, NDTPA_DELAY_PROBE_TIME, parms->delay_probe_time);
-	nla_put_msecs(skb, NDTPA_RETRANS_TIME, parms->retrans_time);
-	nla_put_msecs(skb, NDTPA_ANYCAST_DELAY, parms->anycast_delay);
-	nla_put_msecs(skb, NDTPA_PROXY_DELAY, parms->proxy_delay);
-	nla_put_msecs(skb, NDTPA_LOCKTIME, parms->locktime);
+	if ((parms->dev &&
+		nla_put_u32(skb, NDTPA_IFINDEX, parms->dev->ifindex)) ||
+		nla_put_u32(skb, NDTPA_REFCNT, atomic_read(&parms->refcnt)) ||
+		nla_put_u32(skb, NDTPA_QUEUE_LENBYTES, parms->queue_len_bytes) ||
+		/* approximative value for deprecated QUEUE_LEN (in packets) */
+		nla_put_u32(skb, NDTPA_QUEUE_LEN,
+			    DIV_ROUND_UP(parms->queue_len_bytes,
+				 SKB_TRUESIZE(ETH_FRAME_LEN))) ||
+		nla_put_u32(skb, NDTPA_PROXY_QLEN, parms->proxy_qlen) ||
+		nla_put_u32(skb, NDTPA_APP_PROBES, parms->app_probes) ||
+		nla_put_u32(skb, NDTPA_UCAST_PROBES, parms->ucast_probes) ||
+		nla_put_u32(skb, NDTPA_MCAST_PROBES, parms->mcast_probes) ||
+		nla_put_msecs(skb, NDTPA_REACHABLE_TIME, parms->reachable_time) ||
+		nla_put_msecs(skb, NDTPA_BASE_REACHABLE_TIME,
+		      parms->base_reachable_time) ||
+		nla_put_msecs(skb, NDTPA_GC_STALETIME, parms->gc_staletime) ||
+		nla_put_msecs(skb, NDTPA_DELAY_PROBE_TIME, parms->delay_probe_time) ||
+		nla_put_msecs(skb, NDTPA_RETRANS_TIME, parms->retrans_time) ||
+		nla_put_msecs(skb, NDTPA_ANYCAST_DELAY, parms->anycast_delay) ||
+		nla_put_msecs(skb, NDTPA_PROXY_DELAY, parms->proxy_delay) ||
+		nla_put_msecs(skb, NDTPA_LOCKTIME, parms->locktime))
+			goto nla_put_failure;
 
 	return nla_nest_end(skb, nest);
 
@@ -2187,7 +2187,8 @@ static int pneigh_fill_info(struct sk_buff *skb, struct pneigh_entry *pn,
 	ndm->ndm_ifindex = pn->dev->ifindex;
 	ndm->ndm_state	 = NUD_NONE;
 
-	nla_put(skb, NDA_DST, tbl->key_len, pn->key);
+	if (nla_put(skb, NDA_DST, tbl->key_len, pn->key))
+		goto nla_put_failure;
 
 	return nlmsg_end(skb, nlh);
 

@@ -1683,7 +1683,8 @@ static inline int xfrm_mark_get(struct nlattr **attrs, struct xfrm_mark *m)
 static inline int xfrm_mark_put(struct sk_buff *skb, const struct xfrm_mark *m)
 {
 	if (m->m | m->v)
-		nla_put(skb, XFRMA_MARK, sizeof(struct xfrm_mark), m);
+		if (nla_put(skb, XFRMA_MARK, sizeof(struct xfrm_mark), m))
+			goto nla_put_failure;
 	return 0;
 
 nla_put_failure:

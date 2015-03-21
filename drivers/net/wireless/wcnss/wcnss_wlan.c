@@ -12,6 +12,7 @@
 
 #include <linux/module.h>
 #include <linux/firmware.h>
+#include <linux/io.h>
 #include <linux/slab.h>
 #include <linux/err.h>
 #include <linux/platform_device.h>
@@ -22,6 +23,7 @@
 #include <linux/workqueue.h>
 #include <linux/jiffies.h>
 #include <linux/gpio.h>
+#include <mach/msm_iomap.h>
 #include <linux/wakelock.h>
 #include <linux/delay.h>
 #include <linux/of.h>
@@ -33,8 +35,6 @@
 #include <linux/uaccess.h>
 
 #include <mach/peripheral-loader.h>
-#include <linux/clk.h>
-
 #include <mach/msm_smd.h>
 #include <mach/msm_iomap.h>
 #include <linux/mfd/pm8xxx/misc.h>
@@ -42,8 +42,13 @@
 #ifdef CONFIG_WCNSS_MEM_PRE_ALLOC
 #include "wcnss_prealloc.h"
 #endif
-#include <linux/random.h>
-
+#if defined(CONFIG_MACH_MELIUS_SKT) || defined(CONFIG_MACH_MELIUS_KTT) || \
+	defined(CONFIG_MACH_MELIUS_LGT)
+#if !defined(CONFIG_RADIO_IRIS) && defined(CONFIG_IR_REMOCON_FPGA)
+/* workaround about conflict with qualcomm FM radio gpio */
+#include <mach/msm8930-gpio.h>
+#endif
+#endif
 
 #define DEVICE "wcnss_wlan"
 #define CTRL_DEVICE "wcnss_ctrl"
@@ -65,9 +70,9 @@ MODULE_PARM_DESC(has_calibrated_data, "whether calibrated data file available");
 static DEFINE_SPINLOCK(reg_spinlock);
 
 #define MSM_RIVA_PHYS			0x03204000
-#define MSM_PRONTO_PHYS			0xfb21b000
 
 #define RIVA_SPARE_OFFSET		0x0b4
+#define RIVA_SSR_BIT			BIT(23)
 #define RIVA_SUSPEND_BIT		BIT(24)
 
 #define MSM_RIVA_CCU_BASE			0x03200800
@@ -250,7 +255,6 @@ static struct {
 	unsigned char   fw_minor;
 	unsigned int	serial_number;
 	int		thermal_mitigation;
-	enum wcnss_hw_type	wcnss_hw_type;
 	void		(*tm_notify)(struct device *, int);
 	struct wcnss_wlan_config wlan_config;
 	struct delayed_work wcnss_work;
@@ -418,11 +422,8 @@ void wcnss_riva_dump_pmic_regs(void)
 void wcnss_reset_intr(void)
 {
 	wcnss_riva_dump_pmic_regs();
-		wmb();
-		__raw_writel(1 << 24, MSM_APCS_GCC_BASE + 0x8);
-	} else {
-		pr_err("%s: reset interrupt not supported\n", __func__);
-	}
+	wmb();
+	__raw_writel(1 << 24, MSM_APCS_GCC_BASE + 0x8);
 }
 EXPORT_SYMBOL(wcnss_reset_intr);
 
@@ -510,42 +511,22 @@ static void wcnss_smd_notify_event(void *data, unsigned int event)
 
 static void wcnss_post_bootup(struct work_struct *work)
 {
-	pr_info("%s: Cancel APPS vote for Iris & WCNSS\n", __func__);
+	pr_info("%s: Cancel APPS vote for Iris & Riva\n", __func__);
 
-	/* Since WCNSS is up, cancel any APPS vote for Iris & WCNSS VREGs  */
+	/* Since Riva is up, cancel any APPS vote for Iris & Riva VREGs  */
 	wcnss_wlan_power(&penv->pdev->dev, &penv->wlan_config,
 		WCNSS_WLAN_SWITCH_OFF);
 
-}
-
-static int
-wcnss_pronto_gpios_config(struct device *dev, bool enable)
-{
-	int rc = 0;
-	int i, j;
-	int WCNSS_WLAN_NUM_GPIOS = 5;
-
-	for (i = 0; i < WCNSS_WLAN_NUM_GPIOS; i++) {
-		int gpio = of_get_gpio(dev->of_node, i);
-		if (enable) {
-			rc = gpio_request(gpio, "wcnss_wlan");
-			if (rc) {
-				pr_err("WCNSS gpio_request %d err %d\n",
-					gpio, rc);
-				goto fail;
-			}
-		} else
-			gpio_free(gpio);
-	}
-
-	return rc;
-
-fail:
-	for (j = WCNSS_WLAN_NUM_GPIOS-1; j >= 0; j--) {
-		int gpio = of_get_gpio(dev->of_node, i);
-		gpio_free(gpio);
-	}
-	return rc;
+#if defined(CONFIG_MACH_MELIUS_SKT) || defined(CONFIG_MACH_MELIUS_KTT) || \
+	defined(CONFIG_MACH_MELIUS_LGT)
+#if !defined(CONFIG_RADIO_IRIS) && defined(CONFIG_IR_REMOCON_FPGA)
+	/* workaround about conflict with qualcomm FM radio gpio */
+	gpio_tlmm_config(GPIO_CFG(GPIO_IRDA_SDA, 0,
+		GPIO_CFG_INPUT, GPIO_CFG_NO_PULL, GPIO_CFG_8MA), 1);
+	gpio_tlmm_config(GPIO_CFG(GPIO_IRDA_SCL, 0,
+		GPIO_CFG_INPUT,	GPIO_CFG_NO_PULL, GPIO_CFG_8MA), 1);
+#endif
+#endif
 }
 
 static int
@@ -770,6 +751,22 @@ unsigned int wcnss_get_serial_number(void)
 }
 EXPORT_SYMBOL(wcnss_get_serial_number);
 
+void wcnss_ssr_boot_notify(void)
+{
+	void __iomem *pmu_spare_reg;
+	u32 reg = 0;
+	unsigned long flags;
+
+	pmu_spare_reg = penv->msm_wcnss_base + RIVA_SPARE_OFFSET;
+
+	spin_lock_irqsave(&reg_spinlock, flags);
+	reg = readl_relaxed(pmu_spare_reg);
+	reg |= RIVA_SSR_BIT;
+	writel_relaxed(reg, pmu_spare_reg);
+	spin_unlock_irqrestore(&reg_spinlock, flags);
+}
+EXPORT_SYMBOL(wcnss_ssr_boot_notify);
+
 int wcnss_get_wlan_mac_address(char mac_addr[WLAN_MAC_ADDR_SIZE])
 {
 	if (!penv)
@@ -796,7 +793,7 @@ static int enable_wcnss_suspend_notify_set(const char *val,
 		return ret;
 
 	if (enable_wcnss_suspend_notify)
-		pr_debug("Suspend notification activated for wcnss\n");
+		pr_info("Suspend notification activated for wcnss\n");
 
 	return 0;
 }
@@ -816,65 +813,64 @@ int wcnss_wlan_iris_xo_mode(void)
 EXPORT_SYMBOL(wcnss_wlan_iris_xo_mode);
 
 
+static void wcnss_suspend_notify(void)
 {
 	void __iomem *pmu_spare_reg;
 	u32 reg = 0;
 	unsigned long flags;
 
-	if (!enable_wcnss_suspend_notify)
-		return;
-
-	if (wcnss_hardware_type() == WCNSS_PRONTO_HW)
-		return;
-
 	/* For Riva */
 	pmu_spare_reg = penv->msm_wcnss_base + RIVA_SPARE_OFFSET;
+
 	spin_lock_irqsave(&reg_spinlock, flags);
 	reg = readl_relaxed(pmu_spare_reg);
 	reg |= RIVA_SUSPEND_BIT;
 	writel_relaxed(reg, pmu_spare_reg);
 	spin_unlock_irqrestore(&reg_spinlock, flags);
 }
-EXPORT_SYMBOL(wcnss_suspend_notify);
 
-void wcnss_resume_notify(void)
+static void wcnss_resume_notify(void)
 {
 	void __iomem *pmu_spare_reg;
 	u32 reg = 0;
 	unsigned long flags;
 
-	if (!enable_wcnss_suspend_notify)
-		return;
-
-	if (wcnss_hardware_type() == WCNSS_PRONTO_HW)
-		return;
-
 	/* For Riva */
 	pmu_spare_reg = penv->msm_wcnss_base + RIVA_SPARE_OFFSET;
-
 	spin_lock_irqsave(&reg_spinlock, flags);
 	reg = readl_relaxed(pmu_spare_reg);
 	reg &= ~RIVA_SUSPEND_BIT;
 	writel_relaxed(reg, pmu_spare_reg);
 	spin_unlock_irqrestore(&reg_spinlock, flags);
 }
-EXPORT_SYMBOL(wcnss_resume_notify);
 
 static int wcnss_wlan_suspend(struct device *dev)
 {
+	int ret = 0;
+
 	if (penv && dev && (dev == &penv->pdev->dev) &&
 	    penv->smd_channel_ready &&
-	    penv->pm_ops && penv->pm_ops->suspend)
-		return penv->pm_ops->suspend(dev);
+	    penv->pm_ops && penv->pm_ops->suspend) {
+		ret = penv->pm_ops->suspend(dev);
+		if (ret == 0 && enable_wcnss_suspend_notify)
+			wcnss_suspend_notify();
+		return ret;
+	}
 	return 0;
 }
 
 static int wcnss_wlan_resume(struct device *dev)
 {
+	int ret = 0;
+
 	if (penv && dev && (dev == &penv->pdev->dev) &&
 	    penv->smd_channel_ready &&
-	    penv->pm_ops && penv->pm_ops->resume)
-		return penv->pm_ops->resume(dev);
+	    penv->pm_ops && penv->pm_ops->resume) {
+		ret = penv->pm_ops->resume(dev);
+		if (ret == 0 && enable_wcnss_suspend_notify)
+			wcnss_resume_notify();
+		return ret;
+	}
 	return 0;
 }
 
@@ -1503,10 +1499,6 @@ wcnss_trigger_config(struct platform_device *pdev)
 {
 	int ret;
 	struct qcom_wcnss_opts *pdata;
-	unsigned long wcnss_phys_addr;
-	int size = 0;
-	int has_pronto_hw = of_property_read_bool(pdev->dev.of_node,
-									"qcom,has_pronto_hw");
 
 	/* make sure we are only triggered once */
 	if (penv->triggered)
@@ -1515,36 +1507,25 @@ wcnss_trigger_config(struct platform_device *pdev)
 
 	/* initialize the WCNSS device configuration */
 	pdata = pdev->dev.platform_data;
-	if (WCNSS_CONFIG_UNSPECIFIED == has_48mhz_xo) {
-		if (has_pronto_hw) {
-			has_48mhz_xo = of_property_read_bool(pdev->dev.of_node,
-										"qcom,has_48mhz_xo");
-			penv->wcnss_hw_type = WCNSS_PRONTO_HW;
-		} else {
-			penv->wcnss_hw_type = WCNSS_RIVA_HW;
-			has_48mhz_xo = pdata->has_48mhz_xo;
-		}
-	}
+	if (WCNSS_CONFIG_UNSPECIFIED == has_48mhz_xo)
+		has_48mhz_xo = pdata->has_48mhz_xo;
 	penv->wlan_config.use_48mhz_xo = has_48mhz_xo;
 
 	penv->thermal_mitigation = 0;
 	strlcpy(penv->wcnss_version, "INVALID", WCNSS_VERSION_LEN);
 
+	penv->gpios_5wire = platform_get_resource_byname(pdev, IORESOURCE_IO,
+							"wcnss_gpios_5wire");
+
+	/* allocate 5-wire GPIO resources */
+	if (!penv->gpios_5wire) {
+		dev_err(&pdev->dev, "insufficient IO resources\n");
+		ret = -ENOENT;
+		goto fail_gpio_res;
+	}
+
 	/* Configure 5 wire GPIOs */
-	if (!has_pronto_hw) {
-		penv->gpios_5wire = platform_get_resource_byname(pdev,
-					IORESOURCE_IO, "wcnss_gpios_5wire");
-
-		/* allocate 5-wire GPIO resources */
-		if (!penv->gpios_5wire) {
-			dev_err(&pdev->dev, "insufficient IO resources\n");
-			ret = -ENOENT;
-			goto fail_gpio_res;
-		}
-		ret = wcnss_gpios_config(penv->gpios_5wire, true);
-	} else
-		ret = wcnss_pronto_gpios_config(&pdev->dev, true);
-
+	ret = wcnss_gpios_config(penv->gpios_5wire, true);
 	if (ret) {
 		dev_err(&pdev->dev, "WCNSS gpios config failed.\n");
 		goto fail_gpio_res;
@@ -1580,23 +1561,15 @@ wcnss_trigger_config(struct platform_device *pdev)
 		ret = -ENOENT;
 		goto fail_res;
 	}
+
 	INIT_WORK(&penv->wcnssctrl_rx_work, wcnssctrl_rx_handler);
 	INIT_WORK(&penv->wcnssctrl_version_work, wcnss_send_version_req);
 	INIT_WORK(&penv->wcnssctrl_nvbin_dnld_work, wcnss_nvbin_dnld_main);
 
 	wake_lock_init(&penv->wcnss_wake_lock, WAKE_LOCK_SUSPEND, "wcnss");
 
-	if (wcnss_hardware_type() == WCNSS_PRONTO_HW) {
-		size = 0x3000;
-		wcnss_phys_addr = MSM_PRONTO_PHYS;
-	} else {
-		wcnss_phys_addr = MSM_RIVA_PHYS;
-		size = SZ_256;
-	}
-
-	penv->msm_wcnss_base = ioremap(wcnss_phys_addr, size);
+	penv->msm_wcnss_base = ioremap(MSM_RIVA_PHYS, SZ_256);
 	if (!penv->msm_wcnss_base) {
-		ret = -ENOMEM;
 		pr_err("%s: ioremap wcnss physical failed\n", __func__);
 		goto fail_wake;
 	}
@@ -1605,6 +1578,7 @@ wcnss_trigger_config(struct platform_device *pdev)
 
 fail_wake:
 	wake_lock_destroy(&penv->wcnss_wake_lock);
+
 fail_res:
 	if (penv->pil)
 		pil_put(penv->pil);
@@ -1612,139 +1586,11 @@ fail_pil:
 	wcnss_wlan_power(&pdev->dev, &penv->wlan_config,
 				WCNSS_WLAN_SWITCH_OFF);
 fail_power:
-	if (has_pronto_hw)
-		wcnss_pronto_gpios_config(&pdev->dev, false);
-	else
-		wcnss_gpios_config(penv->gpios_5wire, false);
+	wcnss_gpios_config(penv->gpios_5wire, false);
 fail_gpio_res:
 	kfree(penv);
 	penv = NULL;
 	return ret;
-}
-
-/* Function to get custom MAC address */
-struct mac_addr
-{
-        char magic[6];
-        int  valid;
-        char addr[6];
-};
-
-int random_mac_addr(unsigned char *buf)
-{
-	unsigned int rand_mac;
-	
-    	srandom32((unsigned int)jiffies);
-    	rand_mac = random32();
-    	buf[0] = 0x00;
-    	buf[1] = 0xd0;
-    	buf[2] = 0xd0;
-	buf[3] = (unsigned char)rand_mac;
-	buf[4] = (unsigned char)(rand_mac >> 8);
-	buf[5] = (unsigned char)(rand_mac >> 16);	
-
-	printk("wifi mac: %02x:%02x:%02x:%02x:%02x:%02x\n", 
-		buf[0], buf[1], buf[2], buf[3], buf[4], buf[5]);
-
-	return 0;
-}
-
-int
-zte_wifi_get_mac_addr(unsigned char *addr)
-{
-	#define WIFI_MAC_ADDR_FILE    "/persist/wifimac.dat"
-	#define WIFI_MAX_ADDR_LEN     60
-	#define WIFI_MAC_ADDR_HEAD    "wifiaddr:"
-	int rc = 0;
-	char buf[WIFI_MAX_ADDR_LEN];
-	char *s;
-	struct file *fp;
-	unsigned int wifi_addr[6];
-	int i;
-	
-	memset(buf, 0, WIFI_MAX_ADDR_LEN);
-	fp = filp_open(WIFI_MAC_ADDR_FILE, O_RDONLY, 0);
-
-	if (IS_ERR(fp)){
-		fp = NULL;
-		printk("Open wifi mac file failed! skip it and use random mac addr\n");
-		random_mac_addr(addr);
-		return -1;
-	}
-	 
-	rc = kernel_read(fp, fp->f_pos, buf, WIFI_MAX_ADDR_LEN);
-	s = strstr(buf, WIFI_MAC_ADDR_HEAD);
-	printk("Read form mac file - %s", s);	
-	if (!s) {
-		printk("get wifi mac fail, use random mac addr \n");
-		random_mac_addr(addr);
-		filp_close(fp, NULL);
-		return -1;
-	}
-	else{
-		sscanf(s, "wifiaddr:0x%x 0x%x 0x%x 0x%x 0x%x 0x%x", 
-			&wifi_addr[0], &wifi_addr[1], &wifi_addr[2], 
-			&wifi_addr[3], &wifi_addr[4], &wifi_addr[5]);
-		for(i=0; i<6; i++)
-			addr[i] = wifi_addr[i];
-		if(0 != ((unsigned int)addr[0] % 2)){
-			printk("get wifi mac fail, use random mac addr \n");
-			random_mac_addr(addr);
-			filp_close(fp, NULL);
-			return -1;
-		}
-		else{
-			printk("get wifi mac successfully! \n");
-			filp_close(fp, NULL);
-			return 0;
-		}
-	}
-}
-
-static int common_read_proc(
-char *page, char **start, off_t off, int count, int *eof, void *data, char *inputbuf , int inputlen )
-{
-		int len = inputlen;
-		static int goff=0;
-		if(off==0)
-			goff=0;
-        if (off >= len)
-                return 0;
-        if (count > len - off)
-                count = len - off;		
-		*start=page;		
-        memcpy(page, inputbuf + goff, count);
-		goff+=count;		
-		printk("read:*start=0x%x len=%d off=%d count=%d\n", (unsigned int)*start,len,(int)off,count);	
-
-		if(off+count==len)
-			*eof=1;
-        return count;
-}
-
-
-static int proc_read_wifi_mac(
-char *page, char **start, off_t off, int count, int *eof, void *data)
-{
-	int len = 0;
-	char mac_buf[6];
-	char mac_formated[20];
-	
-	printk("%s, enter!\n", __func__);
-	
-	zte_wifi_get_mac_addr(mac_buf);
-	
-	sprintf(mac_formated, "%02X:%02X:%02X:%02X:%02X:%02X",
-		mac_buf[0], mac_buf[1], mac_buf[2],
-		mac_buf[3], mac_buf[4], mac_buf[5]);
-
-	len = strlen(mac_formated);
-
-	printk("buf=%s\n", mac_formated);
-	printk("len=%d\n", len);
-	
-	return common_read_proc(page, start, off, count, eof, data, mac_formated, len);	
- 
 }
 
 static int wcnss_node_open(struct inode *inode, struct file *file)
@@ -1754,15 +1600,9 @@ static int wcnss_node_open(struct inode *inode, struct file *file)
 
 	if (!penv)
 		return -EFAULT;
-	
+
 	if (!penv->triggered) {
 		pr_info(DEVICE " triggered by userspace\n");
-	{
-		wifi_d_entry->read_proc = proc_read_wifi_mac;
-		wifi_d_entry->write_proc = NULL;
-		wifi_d_entry->data = NULL;
-	}
-	
 		pdev = penv->pdev;
 		rc = wcnss_trigger_config(pdev);
 		if (rc)
@@ -1871,7 +1711,6 @@ exit:
 	return rc;
 }
 
-
 static int wcnss_notif_cb(struct notifier_block *this, unsigned long code,
 				void *ss_handle)
 {
@@ -1888,7 +1727,6 @@ static int wcnss_notif_cb(struct notifier_block *this, unsigned long code,
 static struct notifier_block wnb = {
 	.notifier_call = wcnss_notif_cb,
 };
-
 
 static const struct file_operations wcnss_node_fops = {
 	.owner = THIS_MODULE,
@@ -1970,21 +1808,11 @@ static const struct dev_pm_ops wcnss_wlan_pm_ops = {
 	.resume		= wcnss_wlan_resume,
 };
 
-#ifdef CONFIG_WCNSS_CORE_PRONTO
-static struct of_device_id msm_wcnss_pronto_match[] = {
-	{.compatible = "qcom,wcnss_wlan"},
-	{}
-};
-#endif
-
 static struct platform_driver wcnss_wlan_driver = {
 	.driver = {
 		.name	= DEVICE,
 		.owner	= THIS_MODULE,
 		.pm	= &wcnss_wlan_pm_ops,
-#ifdef CONFIG_WCNSS_CORE_PRONTO
-		.of_match_table = msm_wcnss_pronto_match,
-#endif
 	},
 	.probe	= wcnss_wlan_probe,
 	.remove	= __devexit_p(wcnss_wlan_remove),
@@ -2025,6 +1853,13 @@ static void __exit wcnss_wlan_exit(void)
 	wcnss_prealloc_deinit();
 #endif
 }
+
+static unsigned char prealloc_mac_mem[32*1024];
+void* wcnss_get_prealloc_mac_context(void)
+{
+	return prealloc_mac_mem;
+}
+EXPORT_SYMBOL(wcnss_get_prealloc_mac_context);
 
 module_init(wcnss_wlan_init);
 module_exit(wcnss_wlan_exit);

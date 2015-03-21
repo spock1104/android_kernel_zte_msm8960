@@ -605,9 +605,10 @@ typedef struct tagCsrConfig
 
 #ifdef FEATURE_WLAN_LFR
     tANI_U8   isFastRoamIniFeatureEnabled;
+#endif
+
 #ifdef WLAN_FEATURE_ROAM_SCAN_OFFLOAD
     tANI_U8   isRoamOffloadScanEnabled;
-#endif
 #endif
 
 #ifdef FEATURE_WLAN_CCX

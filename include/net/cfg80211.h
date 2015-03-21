@@ -609,14 +609,24 @@ enum station_info_flags {
  * Used by the driver to indicate the specific rate transmission
  * type for 802.11n transmissions.
  *
- * @RATE_INFO_FLAGS_MCS: @tx_bitrate_mcs filled
- * @RATE_INFO_FLAGS_40_MHZ_WIDTH: 40 Mhz width transmission
+ * @RATE_INFO_FLAGS_MCS: mcs field filled with HT MCS
+ * @RATE_INFO_FLAGS_VHT_MCS: mcs field filled with VHT MCS
+ * @RATE_INFO_FLAGS_40_MHZ_WIDTH: 40 MHz width transmission
+ * @RATE_INFO_FLAGS_80_MHZ_WIDTH: 80 MHz width transmission
+ * @RATE_INFO_FLAGS_80P80_MHZ_WIDTH: 80+80 MHz width transmission
+ * @RATE_INFO_FLAGS_160_MHZ_WIDTH: 160 MHz width transmission
  * @RATE_INFO_FLAGS_SHORT_GI: 400ns guard interval
+ * @RATE_INFO_FLAGS_60G: 60GHz MCS
  */
 enum rate_info_flags {
-	RATE_INFO_FLAGS_MCS		= 1<<0,
-	RATE_INFO_FLAGS_40_MHZ_WIDTH	= 1<<1,
-	RATE_INFO_FLAGS_SHORT_GI	= 1<<2,
+	RATE_INFO_FLAGS_MCS			= BIT(0),
+	RATE_INFO_FLAGS_VHT_MCS			= BIT(1),
+	RATE_INFO_FLAGS_40_MHZ_WIDTH		= BIT(2),
+	RATE_INFO_FLAGS_80_MHZ_WIDTH		= BIT(3),
+	RATE_INFO_FLAGS_80P80_MHZ_WIDTH		= BIT(4),
+	RATE_INFO_FLAGS_160_MHZ_WIDTH		= BIT(5),
+	RATE_INFO_FLAGS_SHORT_GI		= BIT(6),
+	RATE_INFO_FLAGS_60G			= BIT(7),
 };
 
 /**
@@ -627,11 +637,13 @@ enum rate_info_flags {
  * @flags: bitflag of flags from &enum rate_info_flags
  * @mcs: mcs index if struct describes a 802.11n bitrate
  * @legacy: bitrate in 100kbit/s for 802.11abg
+ * @nss: number of streams (VHT only)
  */
 struct rate_info {
 	u8 flags;
 	u8 mcs;
 	u16 legacy;
+	u8 nss;
 };
 
 /**
@@ -3668,6 +3680,25 @@ int cfg80211_can_beacon_sec_chan(struct wiphy *wiphy,
 				 enum nl80211_channel_type channel_type);
 
 /*
+ * cfg80211_tdls_oper_request - request userspace to perform TDLS operation
+ * @dev: the device on which the operation is requested
+ * @peer: the MAC address of the peer device
+ * @oper: the requested TDLS operation (NL80211_TDLS_SETUP or
+ *	NL80211_TDLS_TEARDOWN)
+ * @reason_code: the reason code for teardown request
+ * @gfp: allocation flags
+ *
+ * This function is used to request userspace to perform TDLS operation that
+ * requires knowledge of keys, i.e., link setup or teardown when the AP
+ * connection uses encryption. This is optional mechanism for the driver to use
+ * if it can automatically determine when a TDLS link could be useful (e.g.,
+ * based on traffic and signal strength for a peer).
+ */
+void cfg80211_tdls_oper_request(struct net_device *dev, const u8 *peer,
+				enum nl80211_tdls_operation oper,
+				u16 reason_code, gfp_t gfp);
+
+/*
  * cfg80211_calculate_bitrate - calculate actual bitrate (in 100Kbps units)
  * @rate: given rate_info to calculate bitrate from
  *
@@ -3755,4 +3786,5 @@ void cfg80211_ap_stopped(struct net_device *netdev, gfp_t gfp);
 	WARN(1, "wiphy: %s\n" format, wiphy_name(wiphy), ##args);
 
 #endif /* __NET_CFG80211_H */
+
 

@@ -1755,6 +1755,7 @@ config MSM_MPDEC
 	help
 	  This enables kernel based multi core control.
 	  (up/down hotplug based on load)
+
 if CPU_FREQ_MSM
 
 config MSM_CPU_FREQ_SET_MIN_MAX

@@ -45,15 +45,6 @@
 
 #define SECCLKAGD		BIT(4)
 
-//#ifndef CONFIG_ZTE_PLATFORM
-//#define CONFIG_ZTE_PLATFORM
-//#endif
-
-#ifdef CONFIG_ZTE_PLATFORM
-#define CONFIG_MSM_CPU_FREQ_MAX   1512000
-#define CONFIG_MSM_CPU_FREQ_MIN    384000
-#endif
-
 static DEFINE_MUTEX(driver_lock);
 static DEFINE_SPINLOCK(l2_lock);
 
@@ -439,43 +430,9 @@ static int calculate_vdd_dig(const struct acpu_level *tgt)
 static bool enable_boost = true;
 module_param_named(boost, enable_boost, bool, S_IRUGO | S_IWUSR);
 
-static int zte_acpu_pvs = 0;	//ZTE_LKJ_20121220 add to identify cpu
-module_param_named(pvs_1Nor_3Fa_OtherS, zte_acpu_pvs, uint, S_IRUGO | S_IWUSR);
-bool zte_acpu_pcn = false;
-module_param_named(pcn_Ypcn, zte_acpu_pcn, bool, S_IRUGO | S_IWUSR);
-
-//#ifndef CONFIG_ZTE_PLATFORM
-//#define CONFIG_ZTE_PLATFORM
-//#endif
-#ifdef CONFIG_ZTE_PLATFORM
-bool enable_zte_log;
-module_param_named(enable_zte_log, enable_zte_log, bool, S_IRUGO | S_IWUSR);
-
-
-
-//#define BOOST_UV 25000
-//#define BOOST_UV 50000
-//#define HFPLL_NOMINAL_VDD	1050000
-//#define HFPLL_LOW_VDD		 850000
-//#define HFPLL_LOW_VDD_PLL_L_MAX	0x28
-#endif
-
 static int calculate_vdd_core(const struct acpu_level *tgt)
 {
-#ifdef CONFIG_ZTE_PLATFORM
-	int pll_vdd_core;
-	
-	if (tgt->speed.src != HFPLL)
-		pll_vdd_core = 0;
-	else if (tgt->speed.pll_l_val > HFPLL_LOW_VDD_PLL_L_MAX)
-		pll_vdd_core = HFPLL_NOMINAL_VDD;
-	else
-		pll_vdd_core = HFPLL_LOW_VDD;
-	
-	return max((tgt->vdd_core +  BOOST_UV), pll_vdd_core);
-#else
 	return tgt->vdd_core + (enable_boost ? drv.boost_uv : 0);
-#endif
 }
 
 /* Set the CPU's clock rate and adjust the L2 rate, voltage and BW requests. */
@@ -534,10 +491,6 @@ static int acpuclk_krait_set_rate(int cpu, unsigned long rate,
 
 	dev_dbg(drv.dev, "Switching from ACPU%d rate %lu KHz -> %lu KHz\n",
 		cpu, strt_acpu_s->khz, tgt_acpu_s->khz);
-	
-//      if(enable_zte_log)
-//	  printk("%s,switching from ACPU%d rate %lu KHz -> %lu KHz,vdd_mem=%d,vdd_dig=%d,vdd_core=%d,enable_boost=%d\n",
-//	  	__func__,cpu, strt_acpu_s->khz, tgt_acpu_s->khz,vdd_data.vdd_mem,vdd_data.vdd_dig,vdd_data.vdd_core,enable_boost);
 
 	/* Set the new CPU speed. */
 	set_speed(&drv.scalable[cpu], tgt_acpu_s);
@@ -583,20 +536,9 @@ static struct acpuclk_data acpuclk_krait_data = {
 	.get_rate = acpuclk_krait_get_rate,
 };
 
-/*
- * To fix compiling warning of 'Section mismatch in reference from the function'
- * with the macro of 'CONFIG_DEBUG_SECTION_MISMATCH=y'
- * by ZTE_BOOT_JIA_20121009 jia.jia
- */
-#if 0
-/* Initialize a HFPLL at a given rate and enable it. */
-static void __init hfpll_init(struct scalable *sc,
-			      const struct core_speed *tgt_s)
-#else
 /* Initialize a HFPLL at a given rate and enable it. */
 static void hfpll_init(struct scalable *sc,
-                       const struct core_speed *tgt_s)
-#endif
+			      const struct core_speed *tgt_s)
 {
 	dev_dbg(drv.dev, "Initializing HFPLL%d\n", sc - drv.scalable);
 
@@ -1037,10 +979,8 @@ static const int krait_needs_vmin(void)
 	case 0x511F04D0: /* KR28M2A20 */
 	case 0x511F04D1: /* KR28M2A21 */
 	case 0x510F06F0: /* KR28M4A10 */
-		zte_acpu_pcn = false;//zte_lkej_pm_drive 20121220 modify for pcn
 		return 1;
 	default:
-		zte_acpu_pcn = true;//zte_lkej_pm_drive 20121220 modify for pcn
 		return 0;
 	};
 }
@@ -1108,7 +1048,6 @@ static struct pvs_table * __init select_freq_plan(u32 pte_efuse_phys,
 	/* Select frequency tables. */
 	bin_idx = get_speed_bin(pte_efuse_val);
 	tbl_idx = get_pvs_bin(pte_efuse_val);
-	zte_acpu_pvs = tbl_idx;//zte_lkej_pm 20121220 modify
 
 	return &pvs_tables[bin_idx][tbl_idx];
 }
@@ -1117,8 +1056,6 @@ static void __init drv_data_init(struct device *dev,
 				 const struct acpuclk_krait_params *params)
 {
 	struct pvs_table *pvs;
-	unsigned int zte_cpu_id;
-	struct acpu_level *l, *max_acpu_level = NULL;
 
 	drv.dev = dev;
 	drv.scalable = kmemdup(params->scalable, params->scalable_size,
@@ -1147,15 +1084,6 @@ static void __init drv_data_init(struct device *dev,
 	drv.acpu_freq_tbl = kmemdup(pvs->table, pvs->size, GFP_KERNEL);
 	BUG_ON(!drv.acpu_freq_tbl);
 	drv.boost_uv = pvs->boost_uv;
-
-	/* Find the max supported scaling frequency. */
-	for (l = drv.acpu_freq_tbl ; l->speed.khz != 0; l++)
-		if (l->use_for_scaling)
-			max_acpu_level = l;
-	BUG_ON(!max_acpu_level);
-
-	zte_cpu_id=read_cpuid_id();
-	pr_info("slf2012:CPU_ID=0x%X, Max ACPU freq= %lu KHz, boost_uv=%d\n", zte_cpu_id,max_acpu_level->speed.khz,pvs->boost_uv);
 
 	acpuclk_krait_data.power_collapse_khz = params->stby_khz;
 	acpuclk_krait_data.wait_for_irq_khz = params->stby_khz;
@@ -1201,93 +1129,6 @@ static void __init hw_init(void)
 	bus_init(l2_level);
 }
 
-char * acpu_select_acpu_level(unsigned long khz)
-{
-	struct acpu_level *l;
-
-	if (khz > CONFIG_MSM_CPU_FREQ_MAX)
-		return NULL;
-
-	if (khz < CONFIG_MSM_CPU_FREQ_MIN)
-		return NULL;
-
-	for (l = drv.acpu_freq_tbl; l->speed.khz != 0; l++)
-	{
-	printk("input khz: %lu, acpu level khz: %lu",khz,l->speed.khz);
-		if (khz < CONFIG_MSM_CPU_FREQ_MIN) {
-			if( l->speed.khz  == (khz*1000))
-				return (char*)l;
-			if ((khz*1000) > l->speed.khz ) {
-				l++;
-				if ((khz*1000) < l->speed.khz ) {
-					l--;
-					return (char*)l;
-				}
-				l--;
-			}
-		}
-		
-		if (l->speed.khz  == khz) {
-			return (char*)l;
-		}
-		
-		if (khz > l->speed.khz ) {
-			l++;
-			if (khz <l->speed.khz ) {
-				l--;
-				return (char*)l;
-			}
-			l--;
-		}
-	}
-
-	return NULL;
-}
-
-uint32_t acpu_check_khz_value(unsigned long khz)
-{
-	struct acpu_level *l;
-
-	if (khz > CONFIG_MSM_CPU_FREQ_MAX)
-		return CONFIG_MSM_CPU_FREQ_MAX;
-
-	if (khz < CONFIG_MSM_CPU_FREQ_MIN)
-		return CONFIG_MSM_CPU_FREQ_MIN;
-
-	for (l = drv.acpu_freq_tbl; l->speed.khz != 0; l++)
-	{
-		if (khz < CONFIG_MSM_CPU_FREQ_MIN) {
-			if( l->speed.khz  == (khz*1000))
-				return l->speed.khz ;
-			if ((khz*1000) > l->speed.khz ) {
-				l++;
-				if ((khz*1000) < l->speed.khz ) {
-					l--;
-					return l->speed.khz ;
-				}
-				l--;
-			}
-		}
-		
-		if (l->speed.khz  == khz) {
-			return l->speed.khz;
-		}
-		
-		if (khz > l->speed.khz ) {
-			l++;
-			if (khz <l->speed.khz ) {
-				l--;
-				return l->speed.khz ;
-			}
-			l--;
-		}
-	}
-
-	return 0;
-}
-EXPORT_SYMBOL(acpu_check_khz_value);
-
-
 int __init acpuclk_krait_init(struct device *dev,
 			      const struct acpuclk_krait_params *params)
 {
@@ -1300,3 +1141,4 @@ int __init acpuclk_krait_init(struct device *dev,
 
 	return 0;
 }
+

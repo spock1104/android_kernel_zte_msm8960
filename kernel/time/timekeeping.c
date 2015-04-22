@@ -1103,12 +1103,9 @@ static void update_wall_time(void)
 		timekeeper.xtime.tv_sec++;
 		leap = second_overflow(timekeeper.xtime.tv_sec);
 		timekeeper.xtime.tv_sec += leap;
-<<<<<<< HEAD
-=======
 		timekeeper.wall_to_monotonic.tv_sec -= leap;
 		if (leap)
 			clock_was_set_delayed();
->>>>>>> 5c32103... Patch 3.4.0 --> 3.4.10 using patch -p1 <
 	}
 
 	timekeeping_update(false);
